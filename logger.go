@@ -11,10 +11,11 @@ import (
 var customLogger *log.Logger
 
 const (
-	debugLevel int = 3
-	infoLevel  int = 2
-	warnLevel  int = 1
-	errorLevel int = 0
+	debugLevel int = 4
+	infoLevel  int = 3
+	warnLevel  int = 2
+	errorLevel int = 1
+	panicLevel int = 0
 )
 
 var logLevel = infoLevel
@@ -68,6 +69,11 @@ func Error(message string, a ...any) {
 	logMessage("error", red, message, a...)
 }
 
+func Panic(message string, a ...any) {
+	logMessage("panic", red, message, a...)
+	panic(message)
+}
+
 func SetLevel(level string) {
 	switch strings.ToLower(level) {
 	case "debug":
@@ -78,5 +84,7 @@ func SetLevel(level string) {
 		logLevel = warnLevel
 	case "error":
 		logLevel = errorLevel
+	case "panic":
+		logLevel = panicLevel
 	}
 }
