@@ -20,10 +20,13 @@ const (
 
 var logLevel = infoLevel
 
-var red = "\033[31m"
-var yellow = "\033[33m"
-var nc = "\033[0m"
-var purple = "\033[35m"
+var (
+	red    = "\033[31m"
+	yellow = "\033[33m"
+	nc     = "\033[0m"
+	purple = "\033[35m"
+	gray   = "\033[37m"
+)
 
 func init() {
 	customLogger = log.New(os.Stdout, "", 0)
@@ -33,18 +36,19 @@ func init() {
 		yellow = ""
 		nc = ""
 		purple = ""
+		gray = ""
 	}
 }
 
 func logMessage(severity string, color string, message string, a ...any) {
 	var level = fmt.Sprintf("%s[%s]%s", color, strings.ToUpper(severity), nc)
 	var timedate = time.Now().Format("2006-01-02T15:04:05 MST")
-	if len(a) == 0 {
-		customLogger.Printf("%s %s %s\n", timedate, level, message)
-		return
-	} else {
-		customLogger.Printf("%s %s %s %s\n", timedate, level, message, a)
+	var data = ""
+	if len(a) > 0 {
+		data = fmt.Sprintf(" %s%s%s", gray, a, nc)
 	}
+
+	customLogger.Printf("%s %s %s%s\n", timedate, level, message, data)
 }
 
 func Debug(message string, a ...any) {
