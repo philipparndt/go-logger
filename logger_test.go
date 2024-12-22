@@ -10,6 +10,12 @@ func TestInfo(t *testing.T) {
 	Info("Test", "with", "data")
 }
 
+func TestTrace(t *testing.T) {
+	SetLevel("trace")
+	Trace("Test")
+	Trace("Test", "with", "data")
+}
+
 func TestDebug(t *testing.T) {
 	SetLevel("debug")
 	Debug("Test")

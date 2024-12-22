@@ -11,6 +11,7 @@ import (
 var customLogger *log.Logger
 
 const (
+	traceLevel int = 5
 	debugLevel int = 4
 	infoLevel  int = 3
 	warnLevel  int = 2
@@ -51,6 +52,12 @@ func logMessage(severity string, color string, message string, a ...any) {
 	customLogger.Printf("%s %s %s%s\n", timedate, level, message, data)
 }
 
+func Trace(message string, a ...any) {
+	if logLevel >= debugLevel {
+		logMessage("trace", gray, message, a...)
+	}
+}
+
 func Debug(message string, a ...any) {
 	if logLevel >= debugLevel {
 		logMessage("debug", purple, message, a...)
@@ -80,6 +87,8 @@ func Panic(message string, a ...any) {
 
 func SetLevel(level string) {
 	switch strings.ToLower(level) {
+	case "trace":
+		logLevel = traceLevel
 	case "debug":
 		logLevel = debugLevel
 	case "info":
