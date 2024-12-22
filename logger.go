@@ -53,7 +53,7 @@ func logMessage(severity string, color string, message string, a ...any) {
 }
 
 func Trace(message string, a ...any) {
-	if logLevel >= debugLevel {
+	if logLevel >= traceLevel {
 		logMessage("trace", gray, message, a...)
 	}
 }
