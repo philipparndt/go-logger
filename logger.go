@@ -86,6 +86,25 @@ func Panic(message string, a ...any) {
 	panic(message)
 }
 
+func Log(level string, message string, a ...any) {
+	switch strings.ToLower(level) {
+	case "trace":
+		Trace(message, a...)
+	case "debug":
+		Debug(message, a...)
+	case "info":
+		Info(message, a...)
+	case "warn":
+		Warn(message, a...)
+	case "error":
+		Error(message, a...)
+	case "panic":
+		Panic(message, a...)
+	default:
+		logMessage(level, gray, message, a...)
+	}
+}
+
 func SetLevel(level string) {
 	switch strings.ToLower(level) {
 	case "trace":
