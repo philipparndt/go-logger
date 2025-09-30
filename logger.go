@@ -47,7 +47,7 @@ func logMessage(severity string, color string, message string, a ...any) {
 	var timedate = time.Now().Format("2006-01-02T15:04:05 MST")
 	var data = ""
 	if len(a) > 0 {
-		data = fmt.Sprintf(" %s%s%s", gray, a, nc)
+		data = fmt.Sprintf(" %s%v%s", gray, a, nc)
 	}
 
 	customLogger.Printf("%s %s %s%s\n", timedate, level, message, data)
