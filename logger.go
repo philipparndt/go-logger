@@ -1,150 +1,315 @@
 package logger
 
 import (
-	"fmt"
+	"context"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
-	"time"
+
+	"github.com/go-logr/logr"
+	"k8s.io/klog/v2"
 )
 
-var customLogger *log.Logger
+// Style selects the output format at Init time.
+type Style int
 
 const (
-	traceLevel int = 5
-	debugLevel int = 4
-	infoLevel  int = 3
-	warnLevel  int = 2
-	errorLevel int = 1
-	panicLevel int = 0
+	styleLogger Style = iota
+	styleSlog
+	styleSlim
 )
 
-var logLevel = infoLevel
+// Logger returns the StyleLogger constant for use with Init (key=value pairs in gray).
+func Logger() Style { return styleLogger }
 
-var (
-	red    = "\033[31m"
-	yellow = "\033[33m"
-	nc     = "\033[0m"
-	purple = "\033[35m"
-	gray   = "\033[37m"
-)
+// Slog returns the StyleSlog constant for use with Init (structured key=value).
+func Slog() Style { return styleSlog }
+
+// Slim returns the StyleSlim constant for use with Init (args as array in gray).
+func Slim() Style { return styleSlim }
+
+// LevelTrace is a custom slog level below Debug.
+var LevelTrace = slog.Level(-8)
+
+// LevelPanic is a custom slog level above Error for panic.
+var LevelPanic = slog.Level(12)
+
+// noColor returns true when the NO_COLOR or CI environment variable is set.
+var noColor bool
+
+// currentLevel is a mutable level that can be changed with SetLevel().
+var currentLevel slog.LevelVar
+
+// showThreads controls whether goroutine IDs are displayed in logs.
+var showThreads = true
+
+// contextEnricher is an optional function that extracts additional key/value
+// pairs from the context (e.g. trace IDs). Set via SetContextEnricher.
+var contextEnricher func(ctx context.Context) (string, string)
+
+// currentOut is the current output writer, defaults to os.Stdout.
+var currentOut io.Writer = os.Stdout
+
+// currentStyle stores the current style for re-initialization via LogTo.
+var currentStyle = styleLogger
 
 func init() {
-	customLogger = log.New(os.Stdout, "", 0)
+	noColor = os.Getenv("NO_COLOR") != "" || os.Getenv("CI") != ""
+	currentLevel.Set(slog.LevelInfo)
+}
 
-	if os.Getenv("NO_COLOR") != "" {
-		red = ""
-		yellow = ""
-		nc = ""
-		purple = ""
-		gray = ""
+// Init configures the global slog logger.
+// Call once at program startup, e.g. logger.Init("info", logger.Logger()).
+func Init(level string, style Style) {
+	noColor = os.Getenv("NO_COLOR") != "" || os.Getenv("CI") != ""
+	currentLevel.Set(parseLevel(level))
+	currentStyle = style
+	initHandler(style, currentOut)
+	initKlog()
+}
+
+func initHandler(style Style, out io.Writer) {
+	var handler slog.Handler
+	switch style {
+	case styleLogger:
+		handler = NewColoredLogHandler(&currentLevel, out)
+	case styleSlog:
+		handler = NewColoredSlogHandler(&currentLevel, out)
+	case styleSlim:
+		handler = NewColoredSlimHandler(&currentLevel, out)
 	}
+	slog.SetDefault(slog.New(handler))
 }
 
-func logMessage(severity string, color string, message string, a ...any) {
-	var level = fmt.Sprintf("%s[%s]%s", color, strings.ToUpper(severity), nc)
-	var timedate = time.Now().Format("2006-01-02T15:04:05 MST")
-	var data = ""
-	if len(a) > 0 {
-		data = fmt.Sprintf(" %s%v%s", gray, a, nc)
-	}
-
-	customLogger.Printf("%s %s %s%s\n", timedate, level, message, data)
-}
-
-func Trace(message string, a ...any) {
-	if logLevel >= traceLevel {
-		logMessage("trace", gray, message, a...)
-	}
-}
-
-func Debug(message string, a ...any) {
-	if logLevel >= debugLevel {
-		logMessage("debug", purple, message, a...)
-	}
-}
-
-func Info(message string, a ...any) {
-	if logLevel >= infoLevel {
-		logMessage("info", nc, message, a...)
-	}
-}
-
-func Warn(message string, a ...any) {
-	if logLevel >= warnLevel {
-		logMessage("warn", yellow, message, a...)
-	}
-}
-
-func Error(message string, a ...any) {
-	logMessage("error", red, message, a...)
-}
-
-func Panic(message string, a ...any) {
-	logMessage("panic", red, message, a...)
-	panic(message)
-}
-
-func Log(level string, message string, a ...any) {
-	switch strings.ToLower(level) {
-	case "trace":
-		Trace(message, a...)
-	case "debug":
-		Debug(message, a...)
-	case "info":
-		Info(message, a...)
-	case "warn":
-		Warn(message, a...)
-	case "error":
-		Error(message, a...)
-	case "panic":
-		Panic(message, a...)
-	default:
-		logMessage(level, gray, message, a...)
-	}
-}
-
+// SetLevel changes the global log level.
+// Can be called after Init() to adjust verbosity at runtime.
+// level must be one of: "trace", "debug", "info" (default), "warn", "error" (case-insensitive).
 func SetLevel(level string) {
-	switch strings.ToLower(level) {
-	case "trace":
-		logLevel = traceLevel
-	case "debug":
-		logLevel = debugLevel
-	case "info":
-		logLevel = infoLevel
-	case "warn":
-		logLevel = warnLevel
-	case "error":
-		logLevel = errorLevel
-	case "panic":
-		logLevel = panicLevel
-	}
+	currentLevel.Set(parseLevel(level))
 }
 
+// ShowThreads enables or disables displaying goroutine IDs in logs.
+// Enabled by default.
+func ShowThreads(show bool) {
+	showThreads = show
+}
+
+// SetContextEnricher sets a function that extracts additional key/value pairs
+// from the context (e.g. OpenTelemetry trace IDs). The function should return
+// an empty key to indicate no value is available.
+func SetContextEnricher(fn func(ctx context.Context) (string, string)) {
+	contextEnricher = fn
+}
+
+// enrichFromContext calls the context enricher if set and returns key/value.
+func enrichFromContext(ctx context.Context) (string, string) {
+	if contextEnricher != nil {
+		return contextEnricher(ctx)
+	}
+	return "", ""
+}
+
+// IsLevelEnabled reports whether the given level string will be logged.
 func IsLevelEnabled(level string) bool {
-	switch strings.ToLower(level) {
-	case "trace":
-		return logLevel >= traceLevel
-	case "debug":
-		return logLevel >= debugLevel
-	case "info":
-		return logLevel >= infoLevel
-	case "warn":
-		return logLevel >= warnLevel
-	case "error":
-		return logLevel >= errorLevel
-	case "panic":
-		return logLevel >= panicLevel
-	default:
-		return false
-	}
+	return parseLevel(level) >= currentLevel.Level()
 }
 
+// LogTo redirects log output to the given writer. Pass nil to reset to os.Stdout.
 func LogTo(out io.Writer) {
 	if out == nil {
-		customLogger.SetOutput(os.Stdout)
+		currentOut = os.Stdout
 	} else {
-		customLogger.SetOutput(out)
+		currentOut = out
 	}
+	initHandler(currentStyle, currentOut)
+}
+
+// extractArgs splits the variadic args into an optional leading context,
+// a required string message, and the remaining key/value pairs.
+//
+// Supported call shapes:
+//
+//	logger.Info("msg")
+//	logger.Info("msg", "key", val)
+//	logger.Info(ctx, "msg")
+//	logger.Info(ctx, "msg", "key", val)
+func extractArgs(args ...any) (context.Context, string, []any) {
+	if len(args) == 0 {
+		return context.Background(), "", nil
+	}
+	ctx := context.Background()
+	idx := 0
+	if c, ok := args[0].(context.Context); ok {
+		ctx = c
+		idx = 1
+	}
+	if idx >= len(args) {
+		return ctx, "", nil
+	}
+	msg, _ := args[idx].(string)
+	kv := args[idx+1:]
+	return ctx, msg, kv
+}
+
+func parseLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "trace":
+		return LevelTrace
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	case "panic":
+		return LevelPanic
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// levelName maps an slog.Level to its display name.
+func levelName(level slog.Level) string {
+	switch {
+	case level >= LevelPanic:
+		return "PANIC"
+	case level == LevelTrace:
+		return "TRACE"
+	case level >= slog.LevelError:
+		return "ERROR"
+	case level >= slog.LevelWarn:
+		return "WARN"
+	case level >= slog.LevelInfo:
+		return "INFO"
+	case level >= slog.LevelDebug:
+		return "DEBUG"
+	default:
+		return "TRACE"
+	}
+}
+
+// ---- Color helpers ----
+
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorYellow = "\033[33m"
+	colorPurple = "\033[35m"
+	colorGray   = "\033[37m"
+)
+
+func levelColor(level slog.Level) string {
+	if noColor {
+		return ""
+	}
+	switch {
+	case level >= slog.LevelError:
+		return colorRed
+	case level >= slog.LevelWarn:
+		return colorYellow
+	case level >= slog.LevelInfo:
+		return colorReset
+	case level >= slog.LevelDebug:
+		return colorPurple
+	default:
+		return colorGray // trace
+	}
+}
+
+func resetColor() string {
+	if noColor {
+		return ""
+	}
+	return colorReset
+}
+
+// ---- Public log functions ----
+
+// Trace logs at trace level with optional context (via type assertion).
+func Trace(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, LevelTrace, msg, kv...)
+}
+
+// TraceCtx logs at trace level with explicit context.
+func TraceCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, LevelTrace, msg, args...)
+}
+
+// Debug logs at debug level with optional context (via type assertion).
+func Debug(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, slog.LevelDebug, msg, kv...)
+}
+
+// DebugCtx logs at debug level with explicit context.
+func DebugCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, slog.LevelDebug, msg, args...)
+}
+
+// Info logs at info level with optional context (via type assertion).
+func Info(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, slog.LevelInfo, msg, kv...)
+}
+
+// InfoCtx logs at info level with explicit context.
+func InfoCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, slog.LevelInfo, msg, args...)
+}
+
+// Warn logs at warn level with optional context (via type assertion).
+func Warn(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, slog.LevelWarn, msg, kv...)
+}
+
+// WarnCtx logs at warn level with explicit context.
+func WarnCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, slog.LevelWarn, msg, args...)
+}
+
+// Error logs at error level with optional context (via type assertion).
+func Error(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, slog.LevelError, msg, kv...)
+}
+
+// ErrorCtx logs at error level with explicit context.
+func ErrorCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, slog.LevelError, msg, args...)
+}
+
+// Panic logs at error level then panics with the message string (optional context via type assertion).
+func Panic(args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, slog.LevelError, msg, kv...)
+	panic(msg)
+}
+
+// PanicCtx logs at error level with explicit context, then panics.
+func PanicCtx(ctx context.Context, msg string, args ...any) {
+	slog.Default().Log(ctx, slog.LevelError, msg, args...)
+	panic(msg)
+}
+
+// Log logs a message at the given level string.
+func Log(level string, args ...any) {
+	ctx, msg, kv := extractArgs(args...)
+	slog.Default().Log(ctx, parseLevel(level), msg, kv...)
+}
+
+// Logr returns a logr.Logger backed by the current slog handler.
+// This allows libraries that use logr to log through go-logger with the configured style.
+// Must be called after Init().
+func Logr() logr.Logger {
+	return logr.FromSlogHandler(slog.Default().Handler())
+}
+
+// initKlog bridges klog output through the current slog.Default() handler.
+func initKlog() {
+	klog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 }

@@ -1,8 +1,85 @@
 # go-logger
 
-Shared logger configuration for my go projects.
+Shared logger configuration for my Go projects. Built on `log/slog` with colored output, multiple styles, and optional OpenTelemetry support.
 
+## Install
 
 ```
 go get github.com/philipparndt/go-logger
 ```
+
+## Usage
+
+```go
+import logger "github.com/philipparndt/go-logger"
+
+func main() {
+    // Initialize with a style: Logger(), Slog(), or Slim()
+    logger.Init("info", logger.Logger())
+
+    // Simple logging
+    logger.Info("application started", "version", "1.0.0")
+    logger.Debug("processing", "items", 42)
+    logger.Warn("deprecated endpoint used")
+    logger.Error("connection failed", "host", "db.example.com")
+
+    // With context
+    ctx := context.Background()
+    logger.Info(ctx, "request handled", "method", "GET")
+
+    // Change level at runtime
+    logger.SetLevel("debug")
+
+    // Check if level is enabled (avoid expensive computations)
+    if logger.IsLevelEnabled(slog.LevelDebug) {
+        logger.Debug("expensive debug info", "data", computeDebugData())
+    }
+}
+```
+
+## Styles
+
+- **`Logger()`** — Compact format with colored level and key=value pairs in gray:
+  ```
+  2024-01-15T15:04:05Z INFO [  1] application started version="1.0.0"
+  ```
+
+- **`Slog()`** — Structured slog-style format:
+  ```
+  time=2024-01-15T15:04:05Z level=INFO msg="application started" version="1.0.0" gid=1
+  ```
+
+- **`Slim()`** — Compact with args as array:
+  ```
+  2024-01-15T15:04:05Z [INFO] application started [version 1.0.0 gid 1]
+  ```
+
+## Chi Middleware
+
+```
+go get github.com/philipparndt/go-logger/chi
+```
+
+```go
+import (
+    "github.com/go-chi/chi/v5"
+    "github.com/go-chi/chi/v5/middleware"
+    loggerchi "github.com/philipparndt/go-logger/chi"
+)
+
+r := chi.NewRouter()
+middleware.DefaultLogger = loggerchi.Logger()
+r.Use(middleware.Logger)
+```
+
+## OpenTelemetry Support
+
+```
+go get github.com/philipparndt/go-logger/otel
+```
+
+```go
+import _ "github.com/philipparndt/go-logger/otel"
+```
+
+Import the package to automatically add trace IDs from context to log output.
