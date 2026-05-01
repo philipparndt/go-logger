@@ -2,26 +2,42 @@ package logger
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/klog/v2"
 )
+
+// defaultTimezone is the timezone used when SetTimezone has not been called.
+// Set to Germany (Europe/Berlin) per project default.
+const defaultTimezone = "Europe/Berlin"
 
 // Style selects the output format at Init time.
 type Style int
 
 const (
 	styleLogger Style = iota
+	styleLoggerNoUptime
 	styleSlog
 	styleSlim
 )
 
-// Logger returns the StyleLogger constant for use with Init (key=value pairs in gray).
+// Logger returns the StyleLogger constant for use with Init.
+// Default format: timestamp, uptime in seconds, level, goroutine ID,
+// message, and key=value pairs in gray.
+//
+//	2024-01-15T15:04:05Z [  12] INFO [  1] application started version="1.0.0"
 func Logger() Style { return styleLogger }
+
+// LoggerWithoutUptime returns the legacy logger style without the uptime field.
+//
+//	2024-01-15T15:04:05Z INFO [  1] application started version="1.0.0"
+func LoggerWithoutUptime() Style { return styleLoggerNoUptime }
 
 // Slog returns the StyleSlog constant for use with Init (structured key=value).
 func Slog() Style { return styleSlog }
@@ -54,9 +70,41 @@ var currentOut io.Writer = os.Stdout
 // currentStyle stores the current style for re-initialization via LogTo.
 var currentStyle = styleLogger
 
+// startTime is captured at package load and used to compute uptime in the
+// default Logger format.
+var startTime = time.Now()
+
+// currentLocation is the timezone used when formatting log timestamps.
+// Defaults to defaultTimezone; falls back to UTC if the zone fails to load.
+var currentLocation = mustLoadDefaultLocation()
+
+func mustLoadDefaultLocation() *time.Location {
+	loc, err := time.LoadLocation(defaultTimezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 func init() {
 	noColor = os.Getenv("NO_COLOR") != "" || os.Getenv("CI") != ""
 	currentLevel.Set(slog.LevelInfo)
+}
+
+// SetTimezone changes the timezone used to format log timestamps.
+// Pass an IANA name like "Europe/Berlin", "UTC", or "America/New_York".
+func SetTimezone(tz string) error {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return fmt.Errorf("load timezone %q: %w", tz, err)
+	}
+	currentLocation = loc
+	return nil
+}
+
+// formatTime formats a record timestamp in the configured timezone.
+func formatTime(t time.Time) string {
+	return t.In(currentLocation).Format(time.RFC3339)
 }
 
 // Init configures the global slog logger.
@@ -74,6 +122,8 @@ func initHandler(style Style, out io.Writer) {
 	switch style {
 	case styleLogger:
 		handler = NewColoredLogHandler(&currentLevel, out)
+	case styleLoggerNoUptime:
+		handler = NewColoredLogHandlerNoUptime(&currentLevel, out)
 	case styleSlog:
 		handler = NewColoredSlogHandler(&currentLevel, out)
 	case styleSlim:

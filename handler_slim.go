@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"time"
 )
 
 // ColoredSlimHandler is a slog.Handler that writes slim-style output:
@@ -33,7 +32,7 @@ func (h *ColoredSlimHandler) Handle(ctx context.Context, record slog.Record) err
 	var buf bytes.Buffer
 
 	// Timestamp
-	buf.WriteString(record.Time.UTC().Format(time.RFC3339))
+	buf.WriteString(formatTime(record.Time))
 	buf.WriteByte(' ')
 
 	// Colored [LEVEL]

@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"time"
 )
 
 // ColoredSlogHandler is a slog.Handler that writes structured slog-style output:
@@ -35,7 +34,7 @@ func (h *ColoredSlogHandler) Handle(ctx context.Context, record slog.Record) err
 	reset := resetColor()
 
 	// time=...
-	_, _ = fmt.Fprintf(&buf, "time=%s ", record.Time.UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(&buf, "time=%s ", formatTime(record.Time))
 
 	// level=... (colored)
 	_, _ = fmt.Fprintf(&buf, "%slevel=%s%s ", color, levelName(record.Level), reset)

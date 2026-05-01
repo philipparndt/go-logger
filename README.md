@@ -39,7 +39,13 @@ func main() {
 
 ## Styles
 
-- **`Logger()`** — Compact format with colored level and key=value pairs in gray:
+- **`Logger()`** — Default format with timestamp, uptime in seconds, level,
+  goroutine ID, message and key=value pairs in gray:
+  ```
+  2024-01-15T15:04:05Z [  12] INFO [  1] application started version="1.0.0"
+  ```
+
+- **`LoggerWithoutUptime()`** — Same as `Logger()` but without the uptime field:
   ```
   2024-01-15T15:04:05Z INFO [  1] application started version="1.0.0"
   ```
@@ -53,6 +59,17 @@ func main() {
   ```
   2024-01-15T15:04:05Z [INFO] application started [version 1.0.0 gid 1]
   ```
+
+## Timezone
+
+Log timestamps default to `Europe/Berlin`. Override with `SetTimezone` using
+any IANA name:
+
+```go
+if err := logger.SetTimezone("UTC"); err != nil {
+    // invalid zone
+}
+```
 
 ## Chi Middleware
 

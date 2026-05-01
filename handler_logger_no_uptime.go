@@ -6,48 +6,33 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"runtime"
 	"sync"
-	"time"
 )
 
-const (
-	levelPadding       = 5
-	stackBufSize       = 64
-	goroutineIDSScanfN = 1
-)
-
-// ColoredLogHandler is a slog.Handler that writes log-style output with
-// uptime in seconds:
+// ColoredLogHandlerNoUptime is a slog.Handler that writes log-style output
+// without the uptime field:
 //
-//	2024-01-15T15:04:05Z [  12] INFO [  1] message key=value
-type ColoredLogHandler struct {
+//	2024-01-15T15:04:05Z INFO [  1] message key=value
+type ColoredLogHandlerNoUptime struct {
 	level slog.Leveler
 	out   io.Writer
 	mu    sync.Mutex
 	attrs []slog.Attr
 }
 
-func NewColoredLogHandler(level slog.Leveler, out io.Writer) *ColoredLogHandler {
-	return &ColoredLogHandler{level: level, out: out}
+func NewColoredLogHandlerNoUptime(level slog.Leveler, out io.Writer) *ColoredLogHandlerNoUptime {
+	return &ColoredLogHandlerNoUptime{level: level, out: out}
 }
 
-func (h *ColoredLogHandler) Enabled(_ context.Context, l slog.Level) bool {
+func (h *ColoredLogHandlerNoUptime) Enabled(_ context.Context, l slog.Level) bool {
 	return l >= h.level.Level()
 }
 
-func (h *ColoredLogHandler) Handle(ctx context.Context, record slog.Record) error {
+func (h *ColoredLogHandlerNoUptime) Handle(ctx context.Context, record slog.Record) error {
 	var buf bytes.Buffer
 
 	// Timestamp
 	buf.WriteString(formatTime(record.Time))
-	buf.WriteByte(' ')
-
-	// Uptime in seconds, in gray brackets
-	uptime := int64(time.Since(startTime).Seconds())
-	buf.WriteString(colorGray)
-	_, _ = fmt.Fprintf(&buf, "[%4d]", uptime)
-	buf.WriteString(resetColor())
 	buf.WriteByte(' ')
 
 	// Level name (colored) with padding for alignment
@@ -129,45 +114,17 @@ func (h *ColoredLogHandler) Handle(ctx context.Context, record slog.Record) erro
 	return nil
 }
 
-func (h *ColoredLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *ColoredLogHandlerNoUptime) WithAttrs(attrs []slog.Attr) slog.Handler {
 	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
 	copy(newAttrs, h.attrs)
 	copy(newAttrs[len(h.attrs):], attrs)
-	return &ColoredLogHandler{
+	return &ColoredLogHandlerNoUptime{
 		level: h.level,
 		out:   h.out,
 		attrs: newAttrs,
 	}
 }
 
-func (h *ColoredLogHandler) WithGroup(_ string) slog.Handler {
+func (h *ColoredLogHandlerNoUptime) WithGroup(_ string) slog.Handler {
 	return h
-}
-
-// ---- shared helpers ----
-
-// writeAttr writes a single slog.Attr as key=value.
-// String values are quoted; others use their default fmt.
-func writeAttr(buf *bytes.Buffer, attr slog.Attr) {
-	attr.Value = attr.Value.Resolve()
-	if attr.Equal(slog.Attr{}) {
-		return
-	}
-	buf.WriteString(attr.Key)
-	buf.WriteByte('=')
-	v := attr.Value
-	if v.Kind() == slog.KindString {
-		_, _ = fmt.Fprintf(buf, "%q", v.String())
-	} else {
-		buf.WriteString(v.String())
-	}
-}
-
-// goroutineID returns the ID of the current goroutine.
-func goroutineID() uint64 {
-	b := make([]byte, stackBufSize)
-	runtime.Stack(b, false)
-	var id uint64
-	_, _ = fmt.Sscanf(string(b), "goroutine %d", &id)
-	return id
 }

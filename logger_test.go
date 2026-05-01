@@ -25,6 +25,8 @@ func resetForTest(level string, style Style) *bytes.Buffer {
 	switch style {
 	case styleLogger:
 		handler = NewColoredLogHandler(&currentLevel, &buf)
+	case styleLoggerNoUptime:
+		handler = NewColoredLogHandlerNoUptime(&currentLevel, &buf)
 	case styleSlog:
 		handler = NewColoredSlogHandler(&currentLevel, &buf)
 	case styleSlim:
@@ -330,6 +332,29 @@ func TestLoggerFormat_HasBrackets(t *testing.T) {
 }
 
 //nolint:paralleltest
+func TestLoggerFormat_HasUptime(t *testing.T) {
+	startTime = time.Now().Add(-12 * time.Second)
+	buf := resetForTest("info", styleLogger)
+	Info("message")
+	output := buf.String()
+	// Uptime bracket appears before the level
+	assert.Contains(t, output, "[  12]")
+	assert.Regexp(t, `\[\s*\d+\].*INFO.*\[\s*\d+\]`, output)
+}
+
+//nolint:paralleltest
+func TestLoggerWithoutUptime_NoUptimeField(t *testing.T) {
+	buf := resetForTest("info", styleLoggerNoUptime)
+	Info("message")
+	output := buf.String()
+	assert.Contains(t, output, "INFO")
+	// Only one bracketed number (the goroutine ID)
+	parts := strings.SplitN(output, "INFO", 2)
+	assert.NotRegexp(t, `\[\s*\d+\]`, parts[0])
+	assert.Regexp(t, `\[\s*\d+\]`, parts[1])
+}
+
+//nolint:paralleltest
 func TestSlogFormat_HasLevelEquals(t *testing.T) {
 	buf := resetForTest("info", styleSlog)
 	Info("message")
@@ -482,6 +507,38 @@ func TestSlimStyle_AllLevels(t *testing.T) {
 	assert.Contains(t, output, "[INFO]")
 	assert.Contains(t, output, "[WARN]")
 	assert.Contains(t, output, "[ERROR]")
+}
+
+// --- Timezone ---
+
+//nolint:paralleltest
+func TestTimezone_DefaultIsBerlin(t *testing.T) {
+	assert.Equal(t, "Europe/Berlin", currentLocation.String())
+}
+
+//nolint:paralleltest
+func TestSetTimezone_ChangesTimestampZone(t *testing.T) {
+	defer func() { _ = SetTimezone("Europe/Berlin") }()
+
+	assert.NoError(t, SetTimezone("UTC"))
+	buf := resetForTest("info", styleLogger)
+	Info("zone check")
+	line := buf.String()
+	parts := strings.SplitN(line, " ", 2)
+	assert.True(t, strings.HasSuffix(parts[0], "Z"), "expected UTC Z suffix, got %q", parts[0])
+
+	assert.NoError(t, SetTimezone("America/New_York"))
+	buf2 := resetForTest("info", styleLogger)
+	Info("zone check")
+	line2 := buf2.String()
+	parts2 := strings.SplitN(line2, " ", 2)
+	assert.Regexp(t, `[+-]\d{2}:\d{2}$`, parts2[0])
+}
+
+//nolint:paralleltest
+func TestSetTimezone_RejectsInvalidZone(t *testing.T) {
+	err := SetTimezone("Not/AZone")
+	assert.Error(t, err)
 }
 
 // --- LogTo ---
