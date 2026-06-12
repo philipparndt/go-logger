@@ -25,6 +25,8 @@ const (
 	styleLoggerNoUptime
 	styleSlog
 	styleSlim
+	styleCLICompact
+	styleCLI
 )
 
 // Logger returns the StyleLogger constant for use with Init.
@@ -44,6 +46,19 @@ func Slog() Style { return styleSlog }
 
 // Slim returns the StyleSlim constant for use with Init (args as array in gray).
 func Slim() Style { return styleSlim }
+
+// CLICompact returns the StyleCLICompact constant for use with Init.
+// Compact format for CLI tools: uptime in seconds followed by the message in
+// the color of the level, without showing the level name. Args in gray.
+//
+//	[   0] application started version="1.0.0"
+func CLICompact() Style { return styleCLICompact }
+
+// CLI returns the StyleCLI constant for use with Init.
+// Same as CLICompact, but additionally shows the log level:
+//
+//	[   0] INFO  application started version="1.0.0"
+func CLI() Style { return styleCLI }
 
 // LevelTrace is a custom slog level below Debug.
 var LevelTrace = slog.Level(-8)
@@ -128,6 +143,10 @@ func initHandler(style Style, out io.Writer) {
 		handler = NewColoredSlogHandler(&currentLevel, out)
 	case styleSlim:
 		handler = NewColoredSlimHandler(&currentLevel, out)
+	case styleCLICompact:
+		handler = NewColoredCLIHandler(&currentLevel, out, false)
+	case styleCLI:
+		handler = NewColoredCLIHandler(&currentLevel, out, true)
 	}
 	slog.SetDefault(slog.New(handler))
 }

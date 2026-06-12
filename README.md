@@ -14,7 +14,7 @@ go get github.com/philipparndt/go-logger
 import logger "github.com/philipparndt/go-logger"
 
 func main() {
-    // Initialize with a style: Logger(), Slog(), or Slim()
+    // Initialize with a style: Logger(), Slog(), Slim(), CLI(), or CLICompact()
     logger.Init("info", logger.Logger())
 
     // Simple logging
@@ -58,6 +58,17 @@ func main() {
 - **`Slim()`** — Compact with args as array:
   ```
   2024-01-15T15:04:05Z [INFO] application started [version 1.0.0 gid 1]
+  ```
+
+- **`CLICompact()`** — For CLI tools: uptime in seconds, message in the color
+  of the level (level name hidden), key=value pairs in gray:
+  ```
+  [   0] application started version="1.0.0"
+  ```
+
+- **`CLI()`** — Same as `CLICompact()`, but also shows the log level:
+  ```
+  [   0] INFO  application started version="1.0.0"
   ```
 
 ## Timezone

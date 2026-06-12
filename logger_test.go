@@ -31,6 +31,10 @@ func resetForTest(level string, style Style) *bytes.Buffer {
 		handler = NewColoredSlogHandler(&currentLevel, &buf)
 	case styleSlim:
 		handler = NewColoredSlimHandler(&currentLevel, &buf)
+	case styleCLICompact:
+		handler = NewColoredCLIHandler(&currentLevel, &buf, false)
+	case styleCLI:
+		handler = NewColoredCLIHandler(&currentLevel, &buf, true)
 	}
 	slog.SetDefault(slog.New(handler))
 	return &buf
@@ -507,6 +511,83 @@ func TestSlimStyle_AllLevels(t *testing.T) {
 	assert.Contains(t, output, "[INFO]")
 	assert.Contains(t, output, "[WARN]")
 	assert.Contains(t, output, "[ERROR]")
+}
+
+// --- CLI styles ---
+
+//nolint:paralleltest
+func TestCLICompact_HasUptimeAndMessage(t *testing.T) {
+	startTime = time.Now()
+	buf := resetForTest("info", styleCLICompact)
+	Info("message")
+	output := buf.String()
+	assert.Contains(t, output, "[   0] message")
+}
+
+//nolint:paralleltest
+func TestCLICompact_NoLevelNoTimestamp(t *testing.T) {
+	buf := resetForTest("info", styleCLICompact)
+	Info("message")
+	output := buf.String()
+	assert.NotContains(t, output, "INFO")
+	assert.NotRegexp(t, `\d{4}-\d{2}-\d{2}T`, output)
+}
+
+//nolint:paralleltest
+func TestCLICompact_UptimeValue(t *testing.T) {
+	startTime = time.Now().Add(-12 * time.Second)
+	defer func() { startTime = time.Now() }()
+	buf := resetForTest("info", styleCLICompact)
+	Info("message")
+	assert.Contains(t, buf.String(), "[  12]")
+}
+
+//nolint:paralleltest
+func TestCLICompact_KeyValueArgs(t *testing.T) {
+	buf := resetForTest("info", styleCLICompact)
+	Info("message", "mykey", "myval")
+	line := buf.String()
+	assert.Contains(t, line, "mykey=")
+	assert.Contains(t, line, "myval")
+}
+
+//nolint:paralleltest
+func TestCLI_ShowsLevel(t *testing.T) {
+	startTime = time.Now()
+	buf := resetForTest("info", styleCLI)
+	Info("message")
+	output := buf.String()
+	assert.Contains(t, output, "[   0] INFO  message")
+	assert.NotRegexp(t, `\d{4}-\d{2}-\d{2}T`, output)
+}
+
+//nolint:paralleltest
+func TestCLI_AllLevels(t *testing.T) {
+	buf := resetForTest("trace", styleCLI)
+	Trace("trace msg")
+	Debug("debug msg")
+	Info("info msg")
+	Warn("warn msg")
+	Error("error msg")
+	output := buf.String()
+	assert.Contains(t, output, "TRACE")
+	assert.Contains(t, output, "DEBUG")
+	assert.Contains(t, output, "INFO")
+	assert.Contains(t, output, "WARN")
+	assert.Contains(t, output, "ERROR")
+}
+
+//nolint:paralleltest
+func TestCLICompact_MessageUsesLevelColor(t *testing.T) {
+	var buf bytes.Buffer
+	noColor = false
+	defer func() { noColor = true }()
+	currentLevel.Set(parseLevel("error"))
+	slog.SetDefault(slog.New(NewColoredCLIHandler(&currentLevel, &buf, false)))
+	Error("boom")
+	output := buf.String()
+	assert.Contains(t, output, colorRed+"boom"+colorReset)
+	assert.NotContains(t, output, "ERROR")
 }
 
 // --- Timezone ---

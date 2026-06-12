@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  tag-submodules:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nested Go modules need their own tag prefixed with the module
+      # directory (e.g. chi/v1.2.3) so `go get .../chi@v1.2.3` resolves.
+      - name: Tag chi submodule
+        run: |
+          CHI_TAG="chi/${GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${CHI_TAG}" > /dev/null 2>&1; then
+            echo "Tag ${CHI_TAG} already exists, skipping"
+            exit 0
+          fi
+          git tag "${CHI_TAG}" "${GITHUB_SHA}"
+          git push origin "${CHI_TAG}"
